@@ -322,7 +322,9 @@ int CLoader::build_mage_pages()
     int ret = SGX_SUCCESS;
 
     const Section* mage_section = m_parser.get_mage_section_ex();
-    if (mage_section == NULL) return ret;
+    if (mage_section == NULL) {
+        return ret;
+    }
 
 
     uint64_t offset = 0;

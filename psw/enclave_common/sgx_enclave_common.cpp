@@ -40,6 +40,7 @@
 #include "uae_service_internal.h"
 #include "util.h"
 #include <map>
+#include <stdio.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/types.h>
@@ -54,6 +55,25 @@ static std::map<void*, size_t> s_enclave_size;
 static std::map<void*, bool> s_enclave_init;
 static std::map<void*, sgx_attributes_t> s_secs_attr;
 static se_mutex_t s_enclave_mutex;
+
+struct sgx_enclave_add_pages_in_kernel {
+    uint64_t src;
+    uint64_t offset;
+    uint64_t length;
+    uint64_t secinfo;
+    uint64_t flags;
+    uint64_t count;
+};
+
+struct sgx_enclave_init_in_kernel_mainline {
+    uint64_t sigstruct;
+};
+
+#define SGX_PAGE_MEASURE_IN_KERNEL 0x01
+#define SGX_IOC_ENCLAVE_ADD_PAGES_IN_KERNEL \
+    _IOWR(SGX_MAGIC, 0x01, struct sgx_enclave_add_pages_in_kernel)
+#define SGX_IOC_ENCLAVE_INIT_IN_KERNEL_MAINLINE \
+    _IOW(SGX_MAGIC, 0x02, struct sgx_enclave_init_in_kernel_mainline)
 
 typedef struct _mem_region_t {
     void* addr;
@@ -225,12 +245,31 @@ extern "C" void* COMM_API enclave_create(
         return NULL;
     }
 
-    void* enclave_base = mmap(base_address, virtual_size, PROT_NONE, MAP_SHARED, s_hdevice, 0);
-    if (enclave_base == MAP_FAILED) {
+    size_t map_size = virtual_size;
+    if (base_address == NULL)
+        map_size = virtual_size * 2;
+
+    void* mapped_base = mmap(base_address, map_size, PROT_NONE, MAP_SHARED, s_hdevice, 0);
+    if (mapped_base == MAP_FAILED) {
         SE_TRACE(SE_TRACE_WARNING, "\ncreate enclave: mmap failed, errno = %d\n", errno);
         if (enclave_error != NULL)
             *enclave_error = ENCLAVE_OUT_OF_MEMORY;
         return NULL;
+    }
+
+    void* enclave_base = mapped_base;
+    if (base_address == NULL) {
+        uintptr_t mapped = (uintptr_t)mapped_base;
+        uintptr_t aligned = (mapped + virtual_size - 1) & ~(uintptr_t)(virtual_size - 1);
+        size_t prefix = aligned - mapped;
+        size_t suffix = (mapped + map_size) - (aligned + virtual_size);
+
+        if (prefix != 0)
+            munmap((void*)mapped, prefix);
+        if (suffix != 0)
+            munmap((void*)(aligned + virtual_size), suffix);
+
+        enclave_base = (void*)aligned;
     }
 
     secs->base = enclave_base;
@@ -336,32 +375,8 @@ extern "C" size_t COMM_API enclave_load_data(
     if (sec_info.flags & ENCLAVE_PAGE_UNVALIDATED)
         sec_info.flags ^= ENCLAVE_PAGE_UNVALIDATED;
 
-    size_t pages = target_size / SE_PAGE_SIZE;
-    for (size_t i = 0; i < pages; i++) {
-        struct sgx_enclave_add_page addp = { 0, 0, 0, 0 };
-        addp.addr = POINTER_TO_U64((uint8_t*)target_address + SE_PAGE_SIZE * i);
-        addp.src = POINTER_TO_U64(source + SE_PAGE_SIZE * i);
-        addp.secinfo = POINTER_TO_U64(&sec_info);
-        if (!(data_properties & ENCLAVE_PAGE_UNVALIDATED))
-            addp.mrmask |= 0xFFFF;
-
-        int ret = ioctl(s_hdevice, SGX_IOC_ENCLAVE_ADD_PAGE, &addp);
-        if (ret) {
-            SE_TRACE(SE_TRACE_WARNING, "\nAdd Page - %p to %p... FAIL\n", source, target_address);
-            if (source_buffer == NULL && source != NULL)
-                free(source);
-
-            if (enclave_error != NULL)
-                *enclave_error = error_driver2api(ret);
-            return SE_PAGE_SIZE * i;
-        }
-    }
-
-    if (source_buffer == NULL && source != NULL)
-        free(source);
-
-    int prot = (int)(sec_info.flags & SI_MASK_MEM_ATTRIBUTE);
-    // find the enclave base
+    // find the enclave base before issuing ioctls; the in-kernel SGX driver
+    // uses offsets relative to the ELRANGE base instead of absolute addresses.
     void* enclave_base = NULL;
 
     for (auto rec : s_enclave_size) {
@@ -377,6 +392,49 @@ extern "C" size_t COMM_API enclave_load_data(
         return 0;
     }
 
+    size_t pages = target_size / SE_PAGE_SIZE;
+    for (size_t i = 0; i < pages; i++) {
+        int ret = 0;
+        if (s_is_kernel_driver) {
+            uint8_t aligned_page[SE_PAGE_SIZE] __attribute__((aligned(SE_PAGE_SIZE)));
+            uint8_t* page_src = source + SE_PAGE_SIZE * i;
+            if (((uintptr_t)page_src & (SE_PAGE_SIZE - 1)) != 0) {
+                memcpy(aligned_page, page_src, SE_PAGE_SIZE);
+                page_src = aligned_page;
+            }
+
+            struct sgx_enclave_add_pages_in_kernel addp = { 0, 0, 0, 0, 0, 0 };
+            addp.src = POINTER_TO_U64(page_src);
+            addp.offset = POINTER_TO_U64((uint8_t*)target_address + SE_PAGE_SIZE * i) - POINTER_TO_U64(enclave_base);
+            addp.length = SE_PAGE_SIZE;
+            addp.secinfo = POINTER_TO_U64(&sec_info);
+            if (!(data_properties & ENCLAVE_PAGE_UNVALIDATED))
+                addp.flags = SGX_PAGE_MEASURE_IN_KERNEL;
+            ret = ioctl(s_hdevice, SGX_IOC_ENCLAVE_ADD_PAGES_IN_KERNEL, &addp);
+        } else {
+            struct sgx_enclave_add_page addp = { 0, 0, 0, 0 };
+            addp.addr = POINTER_TO_U64((uint8_t*)target_address + SE_PAGE_SIZE * i);
+            addp.src = POINTER_TO_U64(source + SE_PAGE_SIZE * i);
+            addp.secinfo = POINTER_TO_U64(&sec_info);
+            if (!(data_properties & ENCLAVE_PAGE_UNVALIDATED))
+                addp.mrmask |= 0xFFFF;
+            ret = ioctl(s_hdevice, SGX_IOC_ENCLAVE_ADD_PAGE, &addp);
+        }
+        if (ret) {
+            SE_TRACE(SE_TRACE_WARNING, "\nAdd Page - %p to %p... FAIL\n", source, target_address);
+            if (source_buffer == NULL && source != NULL)
+                free(source);
+
+            if (enclave_error != NULL)
+                *enclave_error = error_driver2api(ret);
+            return SE_PAGE_SIZE * i;
+        }
+    }
+
+    if (source_buffer == NULL && source != NULL)
+        free(source);
+
+    int prot = (int)(sec_info.flags & SI_MASK_MEM_ATTRIBUTE);
     se_mutex_lock(&s_enclave_mutex);
     auto enclave_mem_region = &s_enclave_mem_region[enclave_base];
     se_mutex_unlock(&s_enclave_mutex);
@@ -481,11 +539,10 @@ extern "C" bool COMM_API enclave_initialize(
 
         ret = ioctl(s_hdevice, SGX_IOC_ENCLAVE_INIT, &initp);
     } else {
-        struct sgx_enclave_init_in_kernel initp = { 0, 0 };
-        initp.addr = POINTER_TO_U64(base_address);
+        struct sgx_enclave_init_in_kernel_mainline initp = { 0 };
         initp.sigstruct = POINTER_TO_U64(enclave_init_sgx->sigstruct);
 
-        ret = ioctl(s_hdevice, SGX_IOC_ENCLAVE_INIT_IN_KERNEL, &initp);
+        ret = ioctl(s_hdevice, SGX_IOC_ENCLAVE_INIT_IN_KERNEL_MAINLINE, &initp);
     }
 
     if (ret) {

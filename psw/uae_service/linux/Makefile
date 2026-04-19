@@ -58,7 +58,7 @@ INCLUDE += -I$(LINUX_EXTERNAL_DIR)/epid-sdk    \
            -I$(LINUX_PSW_DIR)/ae/aesm_service/source \
            -I$(LINUX_PSW_DIR)/ae/aesm_service/source/common
 
-CXXFLAGS += -fPIC -Werror -Wno-unused-parameter -g -DPROTOBUF_INLINE_NOT_IN_HEADERS=0
+CXXFLAGS += -fPIC -Werror -Wno-error=deprecated-declarations -Wno-error=stringop-truncation -Wno-unused-parameter -g -DPROTOBUF_INLINE_NOT_IN_HEADERS=0
 
 EXTERNAL_LIB += -lprotobuf 
  
