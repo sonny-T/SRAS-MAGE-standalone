@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -159,6 +160,7 @@ def aggregate(rows: list[dict[str, int | str]]) -> list[dict[str, int | float]]:
 
 
 def write_outputs(root: Path, summary: list[dict[str, int | float]]) -> None:
+    quote_exchange_label = os.environ.get("QUOTE_EXCHANGE_LABEL", "wait_all_quotes_ms")
     json_path = root / "mage_quote_benchmark_summary.json"
     csv_path = root / "mage_quote_benchmark_summary.csv"
     txt_path = root / "mage_quote_benchmark_summary.txt"
@@ -203,7 +205,7 @@ def write_outputs(root: Path, summary: list[dict[str, int | float]]) -> None:
                 f"    avg_per_party_auth_ms: {row['avg_per_party_auth_ms']:.3f}",
                 "  Included per-party stages, excluding warmup:",
                 f"    quote_generation_ms: {row['avg_quote_generation_ms']:.3f}",
-                f"    wait_all_quotes_ms: {row['avg_wait_all_quotes_ms']:.3f}",
+                f"    {quote_exchange_label}: {row['avg_wait_all_quotes_ms']:.3f}",
                 f"    quote_verification_total_ms: {row['avg_quote_verification_total_ms']:.3f}",
                 f"    mage_identity_derivation_total_ms: {row['avg_identity_derivation_total_ms']:.3f}",
                 "  Quote generation breakdown:",

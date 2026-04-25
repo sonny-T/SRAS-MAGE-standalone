@@ -21,6 +21,7 @@
 .runtime-lib/
 collateral_cache/
 /results/
+.codex/
 SampleCode/MutualAttestationQuoteBenchmark/.config_*
 SampleCode/MutualAttestationQuoteBenchmark/app
 SampleCode/MutualAttestationQuoteBenchmark/quote_helper
@@ -31,5 +32,18 @@ SampleCode/MutualAttestationQuoteBenchmark/*.so
 SampleCode/MutualAttestationQuoteBenchmark/**/*.o
 SampleCode/MutualAttestationQuoteBenchmark/App/Enclave_u.*
 SampleCode/MutualAttestationQuoteBenchmark/Enclave/Enclave_t.*
+SampleCode/MutualAttestationQuoteFabricBenchmark/.config_*
+SampleCode/MutualAttestationQuoteFabricBenchmark/app
+SampleCode/MutualAttestationQuoteFabricBenchmark/quote_helper
+SampleCode/MutualAttestationQuoteFabricBenchmark/mage.bin
+SampleCode/MutualAttestationQuoteFabricBenchmark/genmage.out
+SampleCode/MutualAttestationQuoteFabricBenchmark/*.so
+SampleCode/MutualAttestationQuoteFabricBenchmark/**/*.o
+SampleCode/MutualAttestationQuoteFabricBenchmark/App/Enclave_u.*
+SampleCode/MutualAttestationQuoteFabricBenchmark/Enclave/Enclave_t.*
 __pycache__/
 *.pyc
+SampleCode/MutualAttestationQuoteBenchmark/enclave.so
+SampleCode/MutualAttestationQuoteBenchmark/libenclave*.so
+SampleCode/MutualAttestationQuoteFabricBenchmark/enclave.so
+SampleCode/MutualAttestationQuoteFabricBenchmark/libenclave*.so
