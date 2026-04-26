@@ -4,6 +4,35 @@ This repository now contains two benchmark variants for reproducing the MAGE
 multi-party trust-establishment measurements without relying on ad hoc local
 build artifacts.
 
+## Quick Start
+
+Pull the published build environment image:
+
+```bash
+docker pull 1024grin/sras-mage-buildenv:20260426
+```
+
+Run a container with the repository mounted to `/work`:
+
+```bash
+docker run -dit \
+  --name mage-buildenv \
+  --device /dev/sgx_enclave:/dev/sgx_enclave \
+  --device /dev/sgx_provision:/dev/sgx_provision \
+  -v /var/run/aesmd/aesm.socket:/var/run/aesmd/aesm.socket \
+  -v /path/to/SRAS-MAGE-standalone:/work \
+  -w /work \
+  1024grin/sras-mage-buildenv:20260426 \
+  bash
+```
+
+Notes:
+
+- The Docker image provides the prebuilt MAGE/SGX runtime environment.
+- The repository source tree is not baked into the image. Mount this repository
+  to `/work` before running any benchmark command.
+- Replace `/path/to/SRAS-MAGE-standalone` with your local clone path.
+
 ## Included Components
 
 - `SampleCode/MutualAttestationQuoteBenchmark`
