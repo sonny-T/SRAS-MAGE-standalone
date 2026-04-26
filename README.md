@@ -33,6 +33,59 @@ Notes:
   to `/work` before running any benchmark command.
 - Replace `/path/to/SRAS-MAGE-standalone` with your local clone path.
 
+## End-to-End Commands
+
+### Local Quote Benchmark
+
+Start the build container:
+
+```bash
+docker start mage-buildenv
+```
+
+Run the local Quote benchmark:
+
+```bash
+REBUILD=1 WARMUP_QUOTE=1 PARTIES_LIST="2 4 6 8" ROUNDS=5 FMSPC=00606A000000 PCK_CA=platform bash scripts/run_mage_quote_benchmark_in_docker.sh
+```
+
+The summary is written to:
+
+```text
+results/quote_benchmark/mage_quote_benchmark_summary.txt
+```
+
+### Fabric Quote Benchmark
+
+Start the SRAS Fabric network from the SRAS repository:
+
+```bash
+cd /path/to/SRAS/fabric_service/fabric_network
+mkdir -p /tmp/sras-docker-wrapper
+printf '#!/usr/bin/env bash\nexec sudo env HLF_VERSION="${HLF_VERSION:-1.4.12}" docker "$@"\n' > /tmp/sras-docker-wrapper/docker
+chmod +x /tmp/sras-docker-wrapper/docker
+PATH=/tmp/sras-docker-wrapper:$PATH bash fabric-network.sh start
+```
+
+Start one Fabric client per party:
+
+```bash
+cd /path/to/SRAS
+python3 performance/start_multi_faric.py --num-parties 8 --wait 0
+```
+
+Run the Fabric Quote benchmark:
+
+```bash
+REBUILD=1 WARMUP_QUOTE=1 FABRIC_HOST=172.17.0.1 FABRIC_BASE_PORT=50051 FABRIC_POLL_INTERVAL=0.05 PARTIES_LIST="2 4 6 8" ROUNDS=5 FMSPC=00606A000000 PCK_CA=platform bash scripts/run_mage_fabric_quote_benchmark_in_docker.sh
+```
+
+The summary is written to:
+
+```text
+results/quote_fabric_benchmark/mage_quote_benchmark_summary.txt
+```
+
 ## Included Components
 
 - `SampleCode/MutualAttestationQuoteBenchmark`
